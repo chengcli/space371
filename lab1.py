@@ -15,7 +15,7 @@ heights = np.linspace(-11, 11, 21)
 traced_rays = []
 for h in heights:
     ray = Ray(pos = [-100, h], dir = [1, 0.])
-    path = trace(ray, SURFACES)
+    path, _ = trace(ray, SURFACES)
     traced_rays.append(path)
 
 fig, ax = plt.subplots(figsize=(10, 4))
@@ -23,6 +23,7 @@ for path, h in zip(traced_rays, heights):
     for i in range(1, len(path)):
         ax.plot([path[i-1].pos[0], path[i].pos[0]],
                 [path[i-1].pos[1], path[i].pos[1]], color=f'C{i-1}')
+
 ax.axhline(0, lw=0.5, ls="--", color="gray")
 ax.set_ylim([-20, 20])
 ax.set_xlabel("x [mm]")

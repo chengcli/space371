@@ -42,7 +42,7 @@ def test5():
     ray = Ray(pos = [-100, 50], dir = [1, 0])
     surf = SphereSurface(center = np.array([0.0, 0.0]), radius = -50.,
                          n_after = 1.517)
-    path = trace(ray, [surf])
+    path, _ = trace(ray, [surf])
     assert len(path) == 3
     assert path[0] == Ray(pos=[-100.,   50.], dir=[1., 0.], n_in=1.0)
     assert path[1] == Ray(pos=[ 0., 50.], dir=[ 0.65919578, -0.75197136], n_in=1.517)

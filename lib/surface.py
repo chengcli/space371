@@ -3,6 +3,8 @@ from dataclasses import dataclass
 from .ray import Ray
 from .refraction import calc_refraction
 
+EPSILON = 1e-6
+
 @dataclass
 class FlatSurface:
   center: np.ndarray
@@ -21,8 +23,8 @@ class FlatSurface:
     m = ray.pos - self.center
     b = ray.dir @ self.norm
     t = - (m @ self.norm) / b
-    if t < 0:
-      return None   # behind the ray
+    if t < EPSILON:
+      return None   # behind or at the ray
     return ray.advance(t)
 
   def refract(self, ray_in: Ray) -> None | Ray:
@@ -44,12 +46,12 @@ class SphereSurface:
     m = ray.pos - self.center
     b = ray.dir @ m
     disc = b * b - (m @ m - self.radius * self.radius)
-    if disc < 0:    # the ray misses
+    if disc < 0:        # the ray misses
         return None
     s = np.sqrt(disc)
     sgn = self.radius / abs(self.radius)
     t = - b - sgn * s
-    if t < 0:       # behind the ray
+    if t < EPSILON:          # behind or at the ray
         return None
     return ray.advance(t)
 

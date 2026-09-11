@@ -1,6 +1,7 @@
 import numpy as np
 from lib.ray import Ray
-from lib.surface import FlatSurface
+from lib.surface import FlatSurface, SphereSurface
+from lib.trace import trace
 
 # check 1: a flat ray keeps its height
 def test1():
@@ -35,3 +36,14 @@ def test4():
     assert ray_out.dir[0] < ray_in.dir[0]  # x component decreases
     assert ray_out.dir[1] < ray_in.dir[1]  # y component decreases
     assert ray_out.n_in == 1.517
+
+# check 5: a grazing incidence at y=50. will refract twice
+def test5():
+    ray = Ray(pos = [-100, 50], dir = [1, 0])
+    surf = SphereSurface(center = np.array([0.0, 0.0]), radius = -50.,
+                         n_after = 1.517)
+    path = trace(ray, [surf])
+    assert len(path) == 3
+    assert path[0] == Ray(pos=[-100.,   50.], dir=[1., 0.], n_in=1.0)
+    assert path[1] == Ray(pos=[ 0., 50.], dir=[ 0.65919578, -0.75197136], n_in=1.517)
+    assert path[2] == Ray(pos=[49.56963462, -6.54609221], dir=[ 0.65919578, -0.75197136], n_in=1.517)

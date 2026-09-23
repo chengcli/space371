@@ -115,17 +115,3 @@ class Instrument:
         w = np.where(np.isfinite(x), self.weights, 0.)
         return np.nansum(x * w, axis = -1) / np.sum(w, axis = -1)
 
-
-def resolve_index(medium: Medium, nwave: int, instrument: Instrument | None = None) -> np.ndarray:
-    """Refractive index of `medium` as an (nwave,) array.
-
-    Without an instrument only numbers or arrays are accepted.
-    """
-    if instrument is not None:
-        if instrument.nwave != nwave:
-            raise ValueError(f"ray has {nwave} wavelengths, "
-                             f"instrument has {instrument.nwave}")
-        return instrument.refractive_index(medium)
-    if isinstance(medium, str):
-        raise ValueError(f"material '{medium}' needs an Instrument to look up its index")
-    return np.broadcast_to(np.asarray(medium, float), (nwave,))

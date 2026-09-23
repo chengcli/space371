@@ -10,8 +10,8 @@ def trace(ray: Ray, surfaces: List[Any], parent = -1, count = 0,
 
     If an Instrument is given, the ray is traced at every instrument
     wavelength: a monochromatic ray is expanded onto the instrument
-    wavelengths and, at each ray node, n_in is recomputed from the
-    instrument's refractive index table for the medium after the surface.
+    wavelengths. The surfaces' n_after must then be sampled at the
+    instrument wavelengths.
     Wavelengths that miss a surface are marked lost (NaN position).
     """
     if instrument is not None and ray.nwave != instrument.nwave:
@@ -25,7 +25,7 @@ def trace(ray: Ray, surfaces: List[Any], parent = -1, count = 0,
     if ray_in is None:      # miss
         return trace(ray, surfaces[1:], parent, count, instrument)
 
-    ray_out1 = surf.refract(ray_in, instrument)
+    ray_out1 = surf.refract(ray_in)
     if ray_out1 is None:    # TODO: total internal reflection
         return [], []
 

@@ -2,7 +2,6 @@ import numpy as np
 from dataclasses import dataclass
 from .ray import Ray
 from .refraction import calc_refraction
-from .instrument import Instrument, Medium, resolve_index
 
 EPSILON = 1e-6
 
@@ -17,23 +16,35 @@ def _advance_to_hit(ray: Ray, t: np.ndarray) -> None | Ray:
     return None               # behind or at the ray, or a miss
   return ray.advance(np.where(hit, t, np.nan))
 
-def _refract(surf, ray_in: Ray, instrument: Instrument | None) -> None | Ray:
+def _check_index(n_after) -> np.ndarray:
+  """n_after must be the refractive index sampled at the ray wavelengths,
+  a 1D array of shape (nwave,)."""
+  if not isinstance(n_after, np.ndarray):
+    raise TypeError(f"n_after should be a np.ndarray, got {type(n_after).__name__}")
+  if n_after.ndim != 1:
+    raise ValueError("n_after should be a 1D array of shape (nwave,)")
+  return n_after.astype(float)
+
+def _refract(surf, ray_in: Ray) -> None | Ray:
+  if surf.n_after.shape != (ray_in.nwave,):
+    raise ValueError(f"n_after has {len(surf.n_after)} wavelengths, "
+                     f"ray has {ray_in.nwave}")
   norm = surf.surface_norm(ray_in.pos)
   flip = np.sum(norm * ray_in.dir, axis = 0) > 0
   norm = np.where(flip, -norm, norm)
-  n_after = resolve_index(surf.n_after, ray_in.nwave, instrument)
-  return calc_refraction(ray_in, norm, n_after)
+  return calc_refraction(ray_in, norm, surf.n_after)
 
 @dataclass
 class FlatSurface:
-  """n_after: medium behind the surface, a number, a material name looked
-  up in the Instrument, or an (nwave,) array."""
+  """n_after: refractive index behind the surface sampled at the ray
+  wavelengths, an (nwave,) array (see Instrument.refractive_index)."""
   center: np.ndarray
   norm: np.ndarray
-  n_after: Medium
+  n_after: np.ndarray
 
   def __post_init__(self):
     self.center = np.asarray(self.center, float)
+    self.n_after = _check_index(self.n_after)
     dir = np.asarray(self.norm, float)
     self.norm = dir / np.linalg.norm(dir)
 
@@ -47,19 +58,20 @@ class FlatSurface:
       t = - (self.norm @ m) / b
     return _advance_to_hit(ray, t)
 
-  def refract(self, ray_in: Ray, instrument: Instrument | None = None) -> None | Ray:
-    return _refract(self, ray_in, instrument)
+  def refract(self, ray_in: Ray) -> None | Ray:
+    return _refract(self, ray_in)
 
 @dataclass
 class SphereSurface:
-  """n_after: medium behind the surface, a number, a material name looked
-  up in the Instrument, or an (nwave,) array."""
+  """n_after: refractive index behind the surface sampled at the ray
+  wavelengths, an (nwave,) array (see Instrument.refractive_index)."""
   center: np.ndarray
   radius: float
-  n_after: Medium
+  n_after: np.ndarray
 
   def __post_init__(self):
     self.center = np.asarray(self.center, float)
+    self.n_after = _check_index(self.n_after)
 
   def surface_norm(self, pos: np.ndarray) -> np.ndarray:
     d = pos - self.center[:, None]
@@ -74,5 +86,5 @@ class SphereSurface:
     t = - b - sgn * s
     return _advance_to_hit(ray, t)
 
-  def refract(self, ray_in: Ray, instrument: Instrument | None = None) -> None | Ray:
-    return _refract(self, ray_in, instrument)
+  def refract(self, ray_in: Ray) -> None | Ray:
+    return _refract(self, ray_in)

@@ -17,7 +17,7 @@ def test2():
 # check 3: a normal incidence keeps its height
 def test3():
     ray = Ray(pos = [-10, 1], dir =[1, 0])
-    surf = FlatSurface(center = [0, 0], norm = [-1, 0], n_after = 1.517)
+    surf = FlatSurface(center = [0, 0], norm = [-1, 0], n_after = np.array([1.517]))
     ray_in = surf.hit(ray)
     assert ray_in == Ray(pos = [0., 1.], dir = [1., 0.])
 
@@ -27,7 +27,7 @@ def test3():
 # check 4: a ray impinging on a surface at 45 degree angle will refract
 def test4():
     ray = Ray(pos = [-10, 1], dir =[1, 0])
-    surf = FlatSurface(center = [0, 0], norm = [-1, 1], n_after = 1.517)
+    surf = FlatSurface(center = [0, 0], norm = [-1, 1], n_after = np.array([1.517]))
     ray_in = surf.hit(ray)
     assert ray_in == Ray(pos = [1., 1.], dir = [1., 0.])
     
@@ -41,7 +41,7 @@ def test4():
 def test5():
     ray = Ray(pos = [-100, 50], dir = [1, 0])
     surf = SphereSurface(center = np.array([0.0, 0.0]), radius = -50.,
-                         n_after = 1.517)
+                         n_after = np.array([1.517]))
     path, _ = trace(ray, [surf])
     assert len(path) == 3
     assert path[0] == Ray(pos=[-100.,   50.], dir=[1., 0.], n_in=1.0)
@@ -56,10 +56,10 @@ from lib.materials import BK7
 
 WAVES = np.array([0.4861, 0.5876, 0.6563])   # F, d, C lines [um]
 
-def lens(glass):
+def lens(glass, air):
     return [
         SphereSurface(center = [40.0, 0], radius = 50.0, n_after = glass),
-        SphereSurface(center = [-40.0, 0], radius = -50.0, n_after = 1.0),
+        SphereSurface(center = [-40.0, 0], radius = -50.0, n_after = air),
     ]
 
 # check 6: the instrument holds a refractive index look-up table
@@ -86,18 +86,19 @@ def test7():
     ray = inst.make_ray(pos = [-100, 5], dir = [1, 0], medium = "BK7")
     assert np.allclose(ray.n_in, inst.refractive_index("BK7"))
 
-# check 8: each wavelength follows its own monochromatic path, and n_in is
-# recomputed from the look-up table at every node
+# check 8: each wavelength follows its own monochromatic path, with n_after
+# sampled from the look-up table
 def test8():
-    inst = Instrument(wavelengths = WAVES, materials = {"BK7": BK7})
-    path, _ = trace(Ray(pos = [-100, 10], dir = [1, 0]), lens("BK7"),
+    inst = Instrument(wavelengths = WAVES, materials = {"air": 1.0, "BK7": BK7})
+    path, _ = trace(Ray(pos = [-100, 10], dir = [1, 0]),
+                    lens(inst.refractive_index("BK7"), inst.refractive_index("air")),
                     instrument = inst)
     assert len(path) == 3
     assert np.allclose(path[1].n_in, BK7(WAVES))
     assert np.allclose(path[2].n_in, 1.0)
 
     for i, lam in enumerate(WAVES):
-        mono, _ = trace(Ray(pos = [-100, 10], dir = [1, 0]), lens(float(BK7(lam))))
+        mono, _ = trace(Ray(pos = [-100, 10], dir = [1, 0]), lens(np.array([BK7(lam)]), np.array([1.0])))
         for node, ref in zip(path, mono):
             assert np.allclose(node.pos[:, i], ref.pos[:, 0])
             assert np.allclose(node.dir[:, i], ref.dir[:, 0])
@@ -111,7 +112,7 @@ def test8():
 def test9():
     theta = np.deg2rad(44.)     # critical angle: 41.8 deg (n=1.5), 45.6 deg (n=1.4)
     ray = Ray(pos = [-1, 0], dir = [np.cos(theta), np.sin(theta)], n_in = [1.5, 1.4])
-    surf = FlatSurface(center = [0, 0], norm = [-1, 0], n_after = 1.0)
+    surf = FlatSurface(center = [0, 0], norm = [-1, 0], n_after = np.ones(2))
     ray_out = surf.refract(surf.hit(ray))
     assert np.array_equal(ray_out.alive, [False, True])
     assert np.isclose(ray_out.dir[1, 1], 1.4 * np.sin(theta))   # Snell's law
@@ -125,3 +126,16 @@ def test10():
     assert np.allclose(inst.weights, [0.25, 0.5, 0.25])
     assert np.isclose(inst.weighted_mean(np.array([1., 2., 3.])), 2.)
     assert np.isclose(inst.weighted_mean(np.array([1., 2., np.nan])), 5. / 3.)
+
+# check 11: n_after only accepts a sampled (nwave,) array
+def test11():
+    import pytest
+    with pytest.raises(TypeError):
+        FlatSurface(center = [0, 0], norm = [-1, 0], n_after = 1.5)
+    with pytest.raises(TypeError):
+        FlatSurface(center = [0, 0], norm = [-1, 0], n_after = "BK7")
+    surf = FlatSurface(center = [0, 0], norm = [-1, 0], n_after = np.ones(2))
+    for n_in in ([1.], [1., 1., 1.]):     # no broadcasting of n_after
+        ray = Ray(pos = [-1, 0], dir = [1, 0], n_in = n_in)
+        with pytest.raises(ValueError):
+            surf.refract(surf.hit(ray))

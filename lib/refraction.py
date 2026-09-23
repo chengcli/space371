@@ -6,7 +6,7 @@ def calc_refraction(ray_in: Ray, norm: np.ndarray, n_after) -> None | Ray:
 
   ray_in:  incoming ray with pos/dir of shape (ndim, nwave)
   norm:    unit surface normal facing the incoming ray, (ndim, nwave) or (ndim,)
-  n_after: refractive index after the surface, scalar or (nwave,)
+  n_after: refractive index after the surface, (nwave,) array
 
   Wavelengths that undergo total internal reflection are marked as lost
   (NaN position). Returns None if no wavelength is transmitted.
@@ -14,7 +14,6 @@ def calc_refraction(ray_in: Ray, norm: np.ndarray, n_after) -> None | Ray:
   norm = np.asarray(norm, float)
   if norm.ndim == 1:
     norm = norm[:, None]
-  n_after = np.broadcast_to(np.asarray(n_after, float), (ray_in.nwave,))
 
   mu = ray_in.n_in / n_after                  # (nwave,)
   c1 = -np.sum(norm * ray_in.dir, axis = 0)   # (nwave,)

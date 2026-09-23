@@ -5,9 +5,9 @@ from lib.trace import trace
 from lib.surface import SphereSurface, FlatSurface
 
 SURFACES = [
-    SphereSurface(center = [40.0, 0], radius = 50.0, n_after = 1.517),    # air -> glass
-    SphereSurface(center = [-40.0, 0], radius = -50.0, n_after = 1.000),  # glass -> air
-    FlatSurface(center = [100.0, 0], norm = [-1, 0], n_after = 10.0),     # screen
+    SphereSurface(center = [40.0, 0], radius = 50.0, n_after = np.array([1.517])),    # air -> glass
+    SphereSurface(center = [-40.0, 0], radius = -50.0, n_after = np.array([1.000])),  # glass -> air
+    FlatSurface(center = [100.0, 0], norm = [-1, 0], n_after = np.array([10.0])),     # screen
     ]
 
 heights = np.linspace(-11, 11, 21)

@@ -1,7 +1,11 @@
 import numpy as np
 from lib.ray import Ray
 from lib.surface import FlatSurface, SphereSurface
-from lib.trace import trace
+from lib.trace import trace as trace_branches
+from lib.refraction import calc_reflectivity
+
+def trace(*args, **kwargs):
+    return trace_branches(*args, reflection=False, **kwargs)
 
 # check 1: a flat ray keeps its height
 def test1():
@@ -22,7 +26,8 @@ def test3():
     assert ray_in == Ray(pos = [0., 1.], dir = [1., 0.])
 
     ray_out = surf.refract(ray_in)
-    assert ray_out == Ray(pos = [0., 1.], dir = [1., 0.], n_in = 1.517)
+    assert ray_out == Ray(pos = [0., 1.], dir = [1., 0.], n_in = 1.517,
+                          intensity = 1 - ((1 - 1.517)/(1 + 1.517))**2)
 
 # check 4: a ray impinging on a surface at 45 degree angle will refract
 def test4():
@@ -37,16 +42,14 @@ def test4():
     assert ray_out.dir[1] < ray_in.dir[1]  # y component decreases
     assert ray_out.n_in == 1.517
 
-# check 5: a grazing incidence at y=50. will refract twice
+# check 5: grazing incidence carries no transmitted power
 def test5():
-    ray = Ray(pos = [-100, 50], dir = [1, 0])
-    surf = SphereSurface(center = np.array([0.0, 0.0]), radius = -50.,
-                         n_after = np.array([1.517]))
-    path, _ = trace(ray, [surf])
-    assert len(path) == 3
-    assert path[0] == Ray(pos=[-100.,   50.], dir=[1., 0.], n_in=1.0)
-    assert path[1] == Ray(pos=[ 0., 50.], dir=[ 0.65919578, -0.75197136], n_in=1.517)
-    assert path[2] == Ray(pos=[49.56963462, -6.54609221], dir=[ 0.65919578, -0.75197136], n_in=1.517)
+    ray = Ray(pos=[-100, 50], dir=[1, 0])
+    surf = SphereSurface(center=[0, 0], radius=-50., n_after=np.array([1.517]))
+    path, parents = trace_branches(ray, [surf])
+    assert parents == [-1, 0, 0]
+    assert np.allclose(path[1].intensity, 0)
+    assert np.allclose(path[2].intensity, 1)
 
 # ---------------------------------------------------------------------------
 # wavelength-dependent refractive index
@@ -97,3 +100,109 @@ def test8():
 
     ray = Ray(pos = [-1, 0], dir = [np.cos(theta), np.sin(theta)], n_in = np.array([1.5, 1.6]))
     assert surf.refract(surf.hit(ray)) is None
+
+
+def test_fresnel_limits():
+    normal = np.array([[-1.], [0.]])
+    ray = Ray(pos=[0, 0], dir=[1, 0])
+    assert np.allclose(calc_reflectivity(ray, normal, 1.5), 0.04)
+    theta = np.arctan(1.5)
+    ray = Ray(pos=[0, 0], dir=[np.cos(theta), np.sin(theta)])
+    assert np.isclose(calc_reflectivity(ray, normal, 1.5)[1, 0], 0)
+    grazing = Ray(pos=[0, 0], dir=[0, 1])
+    assert np.allclose(calc_reflectivity(grazing, normal, 1.5), 1)
+    assert np.allclose(calc_reflectivity(grazing, normal, 1.), 0)
+
+
+def test_polarized_power_and_reflection():
+    ray = Ray(pos=[-1, 0], dir=[1, 0.5], intensity=0.8, polarization=(0.2, 0.8))
+    surf = FlatSurface(center=[0, 0], norm=[-1, 0], n_after=1.5)
+    hit = surf.hit(ray)
+    reflected, transmitted = surf.reflect(hit), surf.refract(hit)
+    assert np.allclose(reflected.dir[:, 0], [-ray.dir[0, 0], ray.dir[1, 0]])
+    assert np.allclose(reflected.n_in, ray.n_in)
+    assert np.allclose(reflected.intensity + transmitted.intensity, ray.intensity)
+    assert np.allclose(reflected.intensity * reflected.polarization +
+                       transmitted.intensity * transmitted.polarization,
+                       ray.intensity * ray.polarization)
+    for node in (hit, reflected, transmitted):
+        assert np.allclose(node.polarization.sum(axis=0), 1)
+    assert np.allclose(hit.intensity, ray.intensity)
+
+
+def test_tir_branches():
+    theta = np.deg2rad(44.)
+    surf = FlatSurface(center=[0, 0], norm=[-1, 0], n_after=np.ones(2))
+    for indices in ([1.5, 1.4], [1.5, 1.6]):
+        ray = Ray(pos=[-1, 0], dir=[np.cos(theta), np.sin(theta)], n_in=indices)
+        path, parents = trace_branches(ray, [surf])
+        reflected = path[-1]
+        assert np.isclose(reflected.intensity[0], 1)
+        assert np.allclose(reflected.polarization[:, 0], 0.5)
+        assert parents[-1] == 0
+        if indices[1] == 1.6:
+            assert len(path) == 2
+            assert np.allclose(reflected.intensity, 1)
+        else:
+            assert np.allclose(path[1].intensity + reflected.intensity, 1)
+
+
+def test_cutoff_and_parents():
+    surfaces = [FlatSurface(center=[x, 0], norm=[-1, 0], n_after=n)
+                for x, n in [(0, 1.5), (1, 1.)]]
+    ray = Ray(pos=[-1, 0], dir=[1, 0])
+    path, parents = trace_branches(ray, surfaces)
+    assert parents == [-1, 0, 1, 1, 3, 3, 5, 5, 0]
+    path, parents = trace_branches(ray, surfaces, min_intensity=0.98)
+    assert parents == [-1, 0, 0]  # 96% transmission stops before second surface
+    assert len(trace_branches(Ray(pos=[-1, 0], dir=[1, 0], intensity=0), surfaces)[0]) == 1
+    same = FlatSurface(center=[0, 0], norm=[-1, 0], n_after=1.)
+    reflected = same.reflect(same.hit(ray))
+    assert np.allclose(reflected.intensity, 0)
+    assert np.all(np.isfinite(reflected.polarization))
+
+
+def test_repeated_reflections():
+    # A normal-incidence slab has R=0.04 at either face, in either direction.
+    surfaces = [FlatSurface(center=[x, 0], norm=[-1, 0], n_after=n)
+                for x, n in [(0, 1.5), (1, 1.)]]
+    path, parents = trace_branches(Ray(pos=[-1, 0], dir=[1, 0]), surfaces)
+    assert np.allclose(path[3].intensity, 0.96 * 0.04)
+    assert np.allclose(path[4].intensity, 0.96**2 * 0.04)
+    assert np.allclose(path[4].n_in, 1.)  # escapes backward into air
+    assert path[4].dir[0, 0] < 0
+    assert np.allclose(path[5].intensity, 0.96 * 0.04**2)
+    assert np.allclose(path[5].n_in, 1.5)  # second internal reflection
+    assert path[5].dir[0, 0] > 0
+    leaves = [node for i, node in enumerate(path) if i not in parents]
+    assert np.allclose(sum(node.intensity for node in leaves), 1.)
+    for i, parent in enumerate(parents):
+        assert -1 <= parent < i
+    # With the intensity cutoff disabled, the depth cap still terminates.
+    path, parents = trace_branches(Ray(pos=[-1, 0], dir=[1, 0]), surfaces, min_intensity=0)
+    from lib.trace import MAX_TRACE_DEPTH
+    depths = []
+    for parent in parents:
+        depths.append(0 if parent == -1 else depths[parent] + 1)
+    assert max(depths) == MAX_TRACE_DEPTH
+
+
+def test_lens_returning_rays():
+    path, parents = trace_branches(Ray(pos=[-100, 6], dir=[1, 0], n_in=np.ones(3)),
+                                  lens(BK7(WAVES), np.ones(3)))
+    # Rear-face reflection reaches the front face, then splits again.
+    assert parents[4] == 3
+    assert np.all(path[3].dir[0] < 0)
+    assert np.all(path[4].pos[0] < path[3].pos[0])
+    assert np.allclose(path[4].n_in, 1.)
+    assert np.allclose(np.linalg.norm(path[4].pos - np.array([[40.], [0.]]), axis=0), 50.)
+    assert np.allclose(path[5].n_in, BK7(WAVES))
+    leaves = [node for i, node in enumerate(path) if i not in parents]
+    assert np.allclose(sum(node.intensity for node in leaves), 1.)
+    for k, wavelength in enumerate(WAVES):
+        mono, mono_parents = trace_branches(Ray(pos=[-100, 6], dir=[1, 0]),
+                                           lens(BK7(wavelength), 1.))
+        assert parents == mono_parents
+        for node, single in zip(path, mono):
+            assert np.allclose(np.broadcast_to(node.pos, (2, 3))[:, k], single.pos[:, 0])
+            assert np.allclose(np.broadcast_to(node.intensity, (3,))[k], single.intensity)

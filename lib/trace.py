@@ -4,25 +4,44 @@ from .ray import Ray
 
 MAX_TRACE_DEPTH = 10
 
-def trace(ray: Ray, surfaces: List[Any], parent = -1, count = 0) -> Tuple[List[Ray], List[int]]:
-    if len(surfaces) == 0 or count > MAX_TRACE_DEPTH:
+
+def trace(ray: Ray, surfaces: List[Any], parent = -1, count = 0,
+          reflection = True, min_intensity = 0.001,
+          surface_index = 0, step = 1, n_before = None) -> Tuple[List[Ray], List[int]]:
+    """Trace through ordered surfaces, reversing the order on reflection.
+
+    surface_index and step track the next interface and travel order during
+    recursion. n_before is the medium before the first surface.
+    Dim terminal rays are retained but are not traced further.
+    """
+    if n_before is None:
+        n_before = ray.n_in
+
+    valid = np.all(np.isfinite(ray.dir), axis = 0) & np.all(np.isfinite(ray.pos), axis = 0)
+    if (surface_index < 0 or surface_index >= len(surfaces) or count >= MAX_TRACE_DEPTH or
+            not np.any(valid & (ray.intensity > 0) & (ray.intensity >= min_intensity))):
         return [ray], [parent]
-    surf = surfaces[0]
+
+    surf = surfaces[surface_index]
     ray_in = surf.hit(ray)
+    if ray_in is None:      # miss: try the next surface without adding a node
+        return trace(ray, surfaces, parent, count, reflection, min_intensity,
+                     surface_index + step, step, n_before)
 
-    if ray_in is None:      # miss
-        return trace(ray, surfaces[1:], parent, count)
+    n_after = surf.n_after
+    if step < 0:           # crossing backward into the preceding medium
+        n_after = surfaces[surface_index - 1].n_after if surface_index > 0 else n_before
 
-    ray_out1 = surf.refract(ray_in)
-    if ray_out1 is None:    # TODO: total internal reflection
-        return [], []
-
-    # check if the refracted ray hits the same surface again
-    ray_next = surf.hit(ray_out1)
-    if ray_next is not None:
-        node, prev = trace(ray_out1, surfaces, parent + 1, count + 1)
-        return [ray] + node, [parent] + prev
-
-    # move on to the next surface
-    node, prev = trace(ray_out1, surfaces[1:], parent + 1, count + 1)
-    return [ray] + node, [parent] + prev
+    ray_out1 = surf.refract(ray_in, n_after)
+    ray_out2 = surf.reflect(ray_in, n_after) if reflection else None
+    nodes, parents = [ray], [parent]
+    for ray_out, next_step in [(ray_out1, step), (ray_out2, -step)]:
+        if ray_out is None:
+            continue
+        node, prev = trace(ray_out, surfaces, 0, count + 1, reflection,
+                           min_intensity, surface_index + next_step, next_step, n_before)
+        # The branch root attaches to this ray; other indices shift when appended.
+        offset = len(nodes)
+        nodes += node
+        parents += [0] + [p + offset for p in prev[1:]]
+    return nodes, parents

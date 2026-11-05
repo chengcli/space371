@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import dataclass
 from .ray import Ray
-from .refraction import calc_refraction
+from .refraction import calc_refraction, calc_reflection
 
 EPSILON = 1e-6
 
@@ -28,10 +28,14 @@ class FlatSurface:
       return None
     return ray.advance(t)
 
-  def refract(self, ray_in: Ray) -> None | Ray:
+  def reflect(self, ray_in: Ray, n_after=None) -> Ray:
+      return calc_reflection(ray_in, self.surface_norm(ray_in.pos),
+                             self.n_after if n_after is None else n_after)
+
+  def refract(self, ray_in: Ray, n_after=None) -> None | Ray:
     norm = self.surface_norm(ray_in.pos)
     norm = np.where(np.sum(norm * ray_in.dir, axis = 0) > 0, -norm, norm)
-    return calc_refraction(ray_in, norm, self.n_after)
+    return calc_refraction(ray_in, norm, self.n_after if n_after is None else n_after)
 
 @dataclass
 class SphereSurface:
@@ -53,13 +57,22 @@ class SphereSurface:
     disc[disc < 0] = np.nan  # the ray misses
     s = np.sqrt(disc)
     sgn = self.radius / abs(self.radius)
-    t = - b - sgn * s
-    t[t < EPSILON] = np.nan  # behind or at the ray
+    # Radius sign selects the left/right lens face, independently of travel
+    # direction. Try both roots so returning rays can hit the same face.
+    roots = np.array([-b - s, -b + s])
+    x = m[0] + roots * ray.dir[0]
+    roots[(roots < EPSILON) | (sgn * x > EPSILON)] = np.inf
+    t = np.min(roots, axis=0)
+    t[~np.isfinite(t)] = np.nan
     if np.all(np.isnan(t)):
         return None
     return ray.advance(t)
 
-  def refract(self, ray_in: Ray) -> None | Ray:
+  def reflect(self, ray_in: Ray, n_after=None) -> Ray:
+      return calc_reflection(ray_in, self.surface_norm(ray_in.pos),
+                             self.n_after if n_after is None else n_after)
+
+  def refract(self, ray_in: Ray, n_after=None) -> None | Ray:
       norm = self.surface_norm(ray_in.pos)
       norm = np.where(np.sum(norm * ray_in.dir, axis = 0) > 0, -norm, norm)
-      return calc_refraction(ray_in, norm, self.n_after)
+      return calc_refraction(ray_in, norm, self.n_after if n_after is None else n_after)

@@ -5,41 +5,43 @@ from .ray import Ray
 MAX_TRACE_DEPTH = 10
 
 
-def trace(ray: Ray, surfaces: List[Any], parent=-1, count=0,
-          include_reflection=True, min_intensity=0.001) -> Tuple[List[Ray], List[int]]:
-    """Trace transmission and repeated reflections through ordered interfaces.
+def trace(ray: Ray, surfaces: List[Any], parent = -1, count = 0,
+          reflection = True, min_intensity = 0.001,
+          surface_index = 0, step = 1, n_before = None) -> Tuple[List[Ray], List[int]]:
+    """Trace through ordered surfaces, reversing the order on reflection.
 
-    Surfaces are listed in initial propagation order. The initial ray's index
-    defines the first medium; each n_after defines the next medium. Reflection
-    reverses traversal through this sequence (a simple sequential lens model).
-    parents indexes the returned ray list (-1 for the root). Dim terminal nodes
-    are retained but stop; intensity is relative to unit incident power.
+    surface_index and step track the next interface and travel order during
+    recursion. n_before is the medium before the first surface.
+    Dim terminal rays are retained but are not traced further.
     """
-    nodes, parents = [], []
-    media = [ray.n_in] + [surf.n_after for surf in surfaces]
+    if n_before is None:
+        n_before = ray.n_in
 
-    def visit(current, surface_index, step, previous, depth):
-        index = len(nodes)
-        nodes.append(current)
-        parents.append(previous)
-        valid = np.all(np.isfinite(current.dir), axis=0) & np.all(np.isfinite(current.pos), axis=0)
-        if (depth >= MAX_TRACE_DEPTH or
-                not np.any(valid & (current.intensity > 0) & (current.intensity >= min_intensity))):
-            return
-        while 0 <= surface_index < len(surfaces):
-            surf = surfaces[surface_index]
-            hit = surf.hit(current)
-            if hit is None:
-                surface_index += step
-                continue
-            n_after = media[surface_index + 1] if step == 1 else media[surface_index]
-            transmitted = surf.refract(hit, n_after)
-            if transmitted is not None:
-                visit(transmitted, surface_index + step, step, index, depth + 1)
-            if include_reflection:
-                reflected = surf.reflect(hit, n_after)
-                visit(reflected, surface_index - step, -step, index, depth + 1)
-            return
+    valid = np.all(np.isfinite(ray.dir), axis = 0) & np.all(np.isfinite(ray.pos), axis = 0)
+    if (surface_index < 0 or surface_index >= len(surfaces) or count >= MAX_TRACE_DEPTH or
+            not np.any(valid & (ray.intensity > 0) & (ray.intensity >= min_intensity))):
+        return [ray], [parent]
 
-    visit(ray, 0, 1, parent, count)
+    surf = surfaces[surface_index]
+    ray_in = surf.hit(ray)
+    if ray_in is None:      # miss: try the next surface without adding a node
+        return trace(ray, surfaces, parent, count, reflection, min_intensity,
+                     surface_index + step, step, n_before)
+
+    n_after = surf.n_after
+    if step < 0:           # crossing backward into the preceding medium
+        n_after = surfaces[surface_index - 1].n_after if surface_index > 0 else n_before
+
+    ray_out1 = surf.refract(ray_in, n_after)
+    ray_out2 = surf.reflect(ray_in, n_after) if reflection else None
+    nodes, parents = [ray], [parent]
+    for ray_out, next_step in [(ray_out1, step), (ray_out2, -step)]:
+        if ray_out is None:
+            continue
+        node, prev = trace(ray_out, surfaces, 0, count + 1, reflection,
+                           min_intensity, surface_index + next_step, next_step, n_before)
+        # The branch root attaches to this ray; other indices shift when appended.
+        offset = len(nodes)
+        nodes += node
+        parents += [0] + [p + offset for p in prev[1:]]
     return nodes, parents

@@ -5,7 +5,7 @@ from lib.trace import trace as trace_branches
 from lib.refraction import calc_reflectivity
 
 def trace(*args, **kwargs):
-    return trace_branches(*args, include_reflection=False, **kwargs)
+    return trace_branches(*args, reflection=False, **kwargs)
 
 # check 1: a flat ray keeps its height
 def test1():

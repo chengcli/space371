@@ -1,7 +1,7 @@
 import numpy as np
 from dataclasses import dataclass
 from .ray import Ray
-from .refraction import calc_refraction
+from .refraction import calc_refraction, calc_reflection
 
 EPSILON = 1e-6
 
@@ -27,6 +27,9 @@ class FlatSurface:
     if np.all(np.isnan(t)):
       return None
     return ray.advance(t)
+
+  def reflect(self, ray_in: Ray) -> Ray:
+      return calc_reflection(ray_in, self.surface_norm(ray_in.pos), self.n_after)
 
   def refract(self, ray_in: Ray) -> None | Ray:
     norm = self.surface_norm(ray_in.pos)
@@ -58,6 +61,9 @@ class SphereSurface:
     if np.all(np.isnan(t)):
         return None
     return ray.advance(t)
+
+  def reflect(self, ray_in: Ray) -> Ray:
+      return calc_reflection(ray_in, self.surface_norm(ray_in.pos), self.n_after)
 
   def refract(self, ray_in: Ray) -> None | Ray:
       norm = self.surface_norm(ray_in.pos)

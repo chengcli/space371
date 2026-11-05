@@ -18,7 +18,7 @@ normal = np.array([[-1.], [0.]])
 surface = FlatSurface(center=[0, 0], norm=[-1, 0], n_after=n_glass)
 direction = np.array([np.cos(brewster), np.sin(brewster)])
 ray = Ray(pos=-30 * direction, dir=direction)  # unpolarized: equal s/p power
-nodes, parents = trace(ray, [surface])
+nodes, parents = trace(ray, [surface], reflection=True)
 
 fig, (ax, curve) = plt.subplots(1, 2, figsize=(12, 5))
 ax.axvspan(0, 35, color='lightblue', alpha=0.3)
@@ -78,7 +78,7 @@ lens_ax.plot(front, y, color='gray', lw=0.8)
 lens_ax.plot(back, y, color='gray', lw=0.8)
 
 for height in [-12., -6., 0., 6., 12.]:
-    path, parents = trace(Ray(pos=[-45, height], dir=[1, 0]), lens)
+    path, parents = trace(Ray(pos=[-45, height], dir=[1, 0]), lens, reflection=True)
     segments = set()
     reflected_path = [False] * len(path)
     for i, parent in enumerate(parents):

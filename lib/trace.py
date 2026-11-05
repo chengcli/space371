@@ -6,7 +6,7 @@ MAX_TRACE_DEPTH = 10
 
 
 def trace(ray: Ray, surfaces: List[Any], parent = -1, count = 0,
-          reflection = True, min_intensity = 0.001,
+          reflection = False, min_intensity = 0.001,
           surface_index = 0, step = 1, n_before = None) -> Tuple[List[Ray], List[int]]:
     """Trace through ordered surfaces, reversing the order on reflection.
 

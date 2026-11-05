@@ -1,11 +1,11 @@
 import numpy as np
 from lib.ray import Ray
 from lib.surface import FlatSurface, SphereSurface
-from lib.trace import trace as trace_branches
+from functools import partial
+from lib.trace import trace
 from lib.refraction import calc_reflectivity
 
-def trace(*args, **kwargs):
-    return trace_branches(*args, reflection=False, **kwargs)
+trace_branches = partial(trace, reflection=True)
 
 # check 1: a flat ray keeps its height
 def test1():

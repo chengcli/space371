@@ -31,7 +31,7 @@ heights = np.linspace(-11, 11, 21)
 traced_rays = []
 for h in heights:
     ray = Ray(pos = [-100, h], dir = [1, 0.], n_in = np.ones(NW))
-    path, _ = trace(ray, SURFACES, reflection=False)
+    path, _ = trace(ray, SURFACES)
     traced_rays.append(path)
 
 def plot_rays(ax, paths):

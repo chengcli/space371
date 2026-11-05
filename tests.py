@@ -152,7 +152,7 @@ def test_cutoff_and_parents():
                 for x, n in [(0, 1.5), (1, 1.)]]
     ray = Ray(pos=[-1, 0], dir=[1, 0])
     path, parents = trace_branches(ray, surfaces)
-    assert parents == [-1, 0, 1, 1, 0]
+    assert parents == [-1, 0, 1, 1, 3, 3, 5, 5, 0]
     path, parents = trace_branches(ray, surfaces, min_intensity=0.98)
     assert parents == [-1, 0, 0]  # 96% transmission stops before second surface
     assert len(trace_branches(Ray(pos=[-1, 0], dir=[1, 0], intensity=0), surfaces)[0]) == 1
@@ -160,3 +160,49 @@ def test_cutoff_and_parents():
     reflected = same.reflect(same.hit(ray))
     assert np.allclose(reflected.intensity, 0)
     assert np.all(np.isfinite(reflected.polarization))
+
+
+def test_repeated_reflections():
+    # A normal-incidence slab has R=0.04 at either face, in either direction.
+    surfaces = [FlatSurface(center=[x, 0], norm=[-1, 0], n_after=n)
+                for x, n in [(0, 1.5), (1, 1.)]]
+    path, parents = trace_branches(Ray(pos=[-1, 0], dir=[1, 0]), surfaces)
+    assert np.allclose(path[3].intensity, 0.96 * 0.04)
+    assert np.allclose(path[4].intensity, 0.96**2 * 0.04)
+    assert np.allclose(path[4].n_in, 1.)  # escapes backward into air
+    assert path[4].dir[0, 0] < 0
+    assert np.allclose(path[5].intensity, 0.96 * 0.04**2)
+    assert np.allclose(path[5].n_in, 1.5)  # second internal reflection
+    assert path[5].dir[0, 0] > 0
+    leaves = [node for i, node in enumerate(path) if i not in parents]
+    assert np.allclose(sum(node.intensity for node in leaves), 1.)
+    for i, parent in enumerate(parents):
+        assert -1 <= parent < i
+    # With the intensity cutoff disabled, the depth cap still terminates.
+    path, parents = trace_branches(Ray(pos=[-1, 0], dir=[1, 0]), surfaces, min_intensity=0)
+    from lib.trace import MAX_TRACE_DEPTH
+    depths = []
+    for parent in parents:
+        depths.append(0 if parent == -1 else depths[parent] + 1)
+    assert max(depths) == MAX_TRACE_DEPTH
+
+
+def test_lens_returning_rays():
+    path, parents = trace_branches(Ray(pos=[-100, 6], dir=[1, 0], n_in=np.ones(3)),
+                                  lens(BK7(WAVES), np.ones(3)))
+    # Rear-face reflection reaches the front face, then splits again.
+    assert parents[4] == 3
+    assert np.all(path[3].dir[0] < 0)
+    assert np.all(path[4].pos[0] < path[3].pos[0])
+    assert np.allclose(path[4].n_in, 1.)
+    assert np.allclose(np.linalg.norm(path[4].pos - np.array([[40.], [0.]]), axis=0), 50.)
+    assert np.allclose(path[5].n_in, BK7(WAVES))
+    leaves = [node for i, node in enumerate(path) if i not in parents]
+    assert np.allclose(sum(node.intensity for node in leaves), 1.)
+    for k, wavelength in enumerate(WAVES):
+        mono, mono_parents = trace_branches(Ray(pos=[-100, 6], dir=[1, 0]),
+                                           lens(BK7(wavelength), 1.))
+        assert parents == mono_parents
+        for node, single in zip(path, mono):
+            assert np.allclose(np.broadcast_to(node.pos, (2, 3))[:, k], single.pos[:, 0])
+            assert np.allclose(np.broadcast_to(node.intensity, (3,))[k], single.intensity)
